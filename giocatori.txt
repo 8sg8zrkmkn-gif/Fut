@@ -1,0 +1,44 @@
+# id,nome,valutazione,slug  (prezzi letti su FUTBIN tra metà ottobre e il 7 novembre 2026; Icon e Hero risalgono a metà settembre: aggiorna la lista ogni tanto)
+# Fascia 50k-150k
+23987,Fermín López TOTW,86,fermin-lopez-marin
+23694,Klara Bühl TOTW,89,klara-buhl
+24068,Géraldine Reuteler UWCL RTTK,86,geraldine-reuteler
+24055,Alyssa Thompson UWCL RTTK,87,alyssa-thompson
+23760,James Garner Ultimate Scream,86,james-garner
+23604,Fabinho Ultimate Scream,87,fabio-henrique-tavares
+23619,Tolisso Ultimate Scream,86,corentin-tolisso
+21733,Crouch Hero,85,crouch
+21742,Jill Scott Hero,85,scott
+21719,Donovan Hero,86,donovan
+21657,Aimar Hero,87,aimar
+21724,Fara Williams Hero,86,williams
+21699,Kuyt Hero,86,kuyt
+# Fascia 150k-400k
+23983,Trinity Rodman TOTW,88,trinity-rodman
+23512,Yan Diomande TOTW,85,yan-diomande
+23356,Alessia Russo TOTW,89,alessia-russo
+22956,Marquinhos TOTW,88,marcos-aoas-correa
+24049,Bastoni UCL RTTK,88,alessandro-bastoni
+24040,Hasegawa UWCL RTTK,89,yui-hasegawa
+23763,Ryerson Ultimate Scream,86,julian-ryerson
+23750,McTominay Ultimate Scream,88,scott-mctominay
+21617,Mascherano Hero,88,mascherano
+21696,Larsson Hero,86,larsson
+# Fascia 400k-1M
+24046,Gravenberch UCL RTTK,88,ryan-gravenberch
+24057,Rafael Leão UCL RTTK,87,rafael-da-conceicao-leao
+24058,Doku UCL RTTK,87,jeremy-doku
+24045,Karchaoui UWCL RTTK,88,sakina-karchaoui
+23692,Gabriel TOTW,90,gabriel-dos-s-magalhaes
+22778,Álvaro Carreras TOTW,83,alvaro-fernandez-carreras
+23598,Szoboszlai Ultimate Scream,88,dominik-szoboszlai
+21902,Maicon Icon,88,maicon
+21877,Sissi Icon,88,sissi
+21562,Foudy Icon,90,foudy
+21899,Cha Bum Kun Icon,88,cha
+21860,Keane Icon,89,keane
+21878,Beckham Icon,88,beckham
+# Pagine FUTBIN con elenchi di carte: lo script ne ricava da solo altri giocatori
+https://www.futbin.com/27/totw/UCLRTTK
+https://www.futbin.com/27/totw/UltimateScream
+https://www.futbin.com/27/popular

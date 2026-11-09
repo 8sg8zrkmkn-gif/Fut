@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Raccoglie i prezzi da FUTBIN e scrive prezzi.json per fut-sniper.html.
+"""Raccoglie i prezzi da FUTBIN e scrive prezzi.json per l’app.
 
 Preparazione:  pip install requests
-Uso:           python raccogli_prezzi.py   (poi ripetilo ogni 10 minuti con cron o Utilità di pianificazione)
-giocatori.txt: una riga per giocatore ->  id,nome,valutazione   (es. 12345,Nome Cognome,91)
-               gli ID li trovi nell’indirizzo della pagina FUTBIN del giocatore.
+Uso:           python raccogli_prezzi.py   (poi ogni 10 minuti con GitHub Actions, cron o Utilità di pianificazione)
+
+giocatori.txt può contenere due tipi di righe:
+  id,nome,valutazione,slug     un giocatore (es. 23987,Fermín López,86,fermin-lopez-marin)
+  https://www.futbin.com/...   una pagina FUTBIN con un elenco di carte: lo script ne ricava da solo gli ID
+id e slug sono nell’indirizzo FUTBIN del giocatore: futbin.com/27/player/ID/SLUG
 
 Ad ogni esecuzione salva il prezzo in storico.json. Da lì calcola:
   ref = prezzo mediano delle ultime 6 ore (il BIN "normale" di poco fa)
@@ -12,28 +15,48 @@ Ad ogni esecuzione salva il prezzo in storico.json. Da lì calcola:
 I giocatori compaiono in prezzi.json quando hanno abbastanza letture (circa 1 ora a 10 minuti di intervallo).
 """
 import json
+import re
 import statistics
 import time
 from pathlib import Path
 
 import requests
 
-ANNO = 27             # numero negli indirizzi FUTBIN (futbin.com/27/...)
-PIATTAFORMA = "ps"    # "ps" oppure "pc"
-PAUSA = 3             # secondi tra due richieste: non scendere sotto, rischi il blocco
+ANNO = 27                       # numero negli indirizzi FUTBIN (futbin.com/27/...)
+PIATTAFORMA = "ps"              # "ps" oppure "pc"
+PAUSA = 3                       # secondi tra due richieste: non scendere sotto, rischi il blocco
+MAX_GIOCATORI = 120             # tetto per tenere breve ogni esecuzione
 ORE_REF = 6
 GIORNI_MEDIA = 7
 MIN_LETTURE = 6
+FUORI_FASCIA = (40000, 1300000) # chi sta fuori viene ricontrollato solo ogni ORE_FUORI ore
+ORE_FUORI = 6
 
 STORICO = Path("storico.json")
+FRASE_PREZZO = re.compile(r"price on FUT is ([\d,.]+) on PlayStation, ([\d,.]+) on Xbox, and ([\d,.]+) on PC")
 
 
-def leggi_prezzo(sessione, pid):
-    # Indirizzo non ufficiale: se FUTBIN lo cambia o lo blocca, va adattato qui.
-    r = sessione.get(f"https://www.futbin.com/{ANNO}/playerPrices", params={"player": pid}, timeout=20)
+def scarica(sessione, url):
+    r = sessione.get(url, timeout=20)
     r.raise_for_status()
-    grezzo = r.json()[str(pid)]["prices"][PIATTAFORMA]["LCPrice"]
-    return int(str(grezzo).replace(",", "").replace(".", "") or 0)
+    return r.text
+
+
+def leggi_prezzo(sessione, pid, slug=""):
+    # FUTBIN scrive nella pagina: "current price on FUT is X on PlayStation, Y on Xbox, and Z on PC".
+    testo = scarica(sessione, f"https://www.futbin.com/{ANNO}/player/{pid}" + (f"/{slug}" if slug else ""))
+    m = FRASE_PREZZO.search(testo)
+    if not m:
+        raise ValueError("prezzo non trovato nella pagina (blocco di FUTBIN o pagina cambiata)")
+    valore = m.group(3) if PIATTAFORMA == "pc" else m.group(1)
+    return int(re.sub(r"\D", "", valore) or 0)
+
+
+def scopri(sessione, url):
+    trovati = {}
+    for pid, slug in re.findall(rf"/{ANNO}/player/(\d+)/([a-z0-9-]+)", scarica(sessione, url)):
+        trovati.setdefault(pid, slug)
+    return trovati
 
 
 def main():
@@ -41,30 +64,47 @@ def main():
     righe = [r.strip() for r in Path("giocatori.txt").read_text(encoding="utf-8").splitlines()]
     righe = [r for r in righe if r and not r.startswith("#")]
     adesso = time.time()
-    risultato = []
 
+    giocatori, liste = {}, []
+    for riga in righe:
+        if riga.startswith("http"):
+            liste.append(riga)
+            continue
+        p = [x.strip() for x in riga.split(",")]
+        val = int(p[2]) if len(p) > 2 and p[2].isdigit() else None
+        giocatori[p[0]] = (p[1] if len(p) > 1 else p[0], val, p[3] if len(p) > 3 else "")
+
+    risultato = []
     with requests.Session() as s:
         s.headers.update({"User-Agent": "Mozilla/5.0"})
-        for riga in righe:
-            parti = [x.strip() for x in riga.split(",")]
-            pid = parti[0]
-            nome = parti[1] if len(parti) > 1 else pid
-            valutazione = int(parti[2]) if len(parti) > 2 and parti[2].isdigit() else None
+        for url in liste:
             try:
-                prezzo = leggi_prezzo(s, pid)
+                for pid, slug in scopri(s, url).items():
+                    giocatori.setdefault(pid, (slug.replace("-", " ").title(), None, slug))
+            except Exception as e:
+                print(f"{url}: {e}")
+            time.sleep(PAUSA)
+
+        for pid, (nome, valutazione, slug) in list(giocatori.items())[:MAX_GIOCATORI]:
+            letture = [x for x in storico.get(pid, []) if adesso - x[0] < GIORNI_MEDIA * 86400]
+            if letture:
+                ts, ultimo = letture[-1]
+                if not FUORI_FASCIA[0] <= ultimo <= FUORI_FASCIA[1] and adesso - ts < ORE_FUORI * 3600:
+                    continue
+            try:
+                prezzo = leggi_prezzo(s, pid, slug)
             except Exception as e:
                 print(f"{pid} {nome}: {e}")
                 time.sleep(PAUSA)
                 continue
             if prezzo > 0:
-                letture = [x for x in storico.get(pid, []) if adesso - x[0] < GIORNI_MEDIA * 86400]
                 recenti = [x[1] for x in letture if adesso - x[0] < ORE_REF * 3600]
                 if len(letture) >= MIN_LETTURE and len(recenti) >= 3:
                     risultato.append({
                         "name": nome, "rating": valutazione, "price": prezzo,
                         "ref": round(statistics.median(recenti)),
                         "avg": round(statistics.mean(x[1] for x in letture)),
-                        "url": f"https://www.futbin.com/{ANNO}/player/{pid}",
+                        "url": f"https://www.futbin.com/{ANNO}/player/{pid}" + (f"/{slug}" if slug else ""),
                     })
                 letture.append([adesso, prezzo])
                 storico[pid] = letture
@@ -72,7 +112,7 @@ def main():
 
     STORICO.write_text(json.dumps(storico))
     Path("prezzi.json").write_text(json.dumps(risultato, ensure_ascii=False))
-    print(f"Fatto: {len(risultato)} giocatori in prezzi.json su {len(righe)} controllati")
+    print(f"Fatto: {len(risultato)} giocatori in prezzi.json su {len(giocatori)} nella lista")
 
 
 if __name__ == "__main__":
