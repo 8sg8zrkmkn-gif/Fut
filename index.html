@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FUT Sniper</title>
+<style>
+:root{--bg:#eef1f4;--sf:#fff;--tx:#172026;--mu:#66727d;--ln:#d5dce2;--ac:#2447d6;--acx:#fff;--gain:#0b7a5a;--bar:#cfe9df;--warn:#a85a00;--bad:#b3261e}
+:root:not([data-theme="light"]){}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161b;--sf:#1a2027;--tx:#e6eaee;--mu:#8a96a2;--ln:#2a323b;--ac:#7f9bff;--acx:#10161f;--gain:#4fd1a5;--bar:#1d3a33;--warn:#f0b04d;--bad:#ff8a80}}
+*{box-sizing:border-box}
+html,body{margin:0}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:16px;max-width:760px;margin:0 auto}
+h1{font-size:22px;margin:4px 0 2px;letter-spacing:-.01em}
+.sub{color:var(--mu);margin:0 0 14px;font-size:13px}
+.banner{background:var(--sf);border:1px solid var(--ln);border-left:4px solid var(--warn);border-radius:6px;padding:10px 12px;margin-bottom:14px;font-size:13px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+button,select,input{font:inherit;color:var(--tx)}
+button{background:var(--ac);color:var(--acx);border:0;border-radius:6px;padding:9px 16px;font-weight:600;cursor:pointer}
+button.ghost{background:transparent;color:var(--tx);border:1px solid var(--ln)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+select,input{background:var(--sf);border:1px solid var(--ln);border-radius:6px;padding:8px 10px}
+details{background:var(--sf);border:1px solid var(--ln);border-radius:8px;padding:10px 12px;margin-bottom:14px}
+summary{cursor:pointer;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu)}
+label.wide{grid-column:1/-1}
+.stat{font-size:13px;color:var(--mu);margin:0 0 8px}
+.row{background:var(--sf);border:1px solid var(--ln);border-radius:8px;padding:12px;margin-bottom:8px}
+.top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.nm{font-weight:650;font-size:16px}
+.nm small{color:var(--mu);font-weight:500;margin-left:6px}
+.pf{color:var(--gain);font-weight:700;font-size:18px;white-space:nowrap}
+.track{height:8px;background:var(--bar);border-radius:4px;margin:10px 0 8px;overflow:hidden}
+.fill{height:100%;background:var(--gain);border-radius:4px}
+.meta{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;color:var(--mu)}
+.meta b{color:var(--tx);font-weight:600}
+.flag{color:var(--warn);font-weight:600}
+.empty{text-align:center;color:var(--mu);padding:30px 10px}
+.err{color:var(--bad)}
+a{color:var(--ac)}
+.num{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<h1>FUT Sniper</h1>
+<p class="sub" id="status">Caricamento…</p>
+<div class="banner" id="demo" hidden>Dati di esempio: inserisci l’indirizzo della tua sorgente dati nelle impostazioni per vedere i prezzi reali.</div>
+
+<div class="bar">
+  <button id="go">Aggiorna</button>
+  <select id="auto" aria-label="Aggiornamento automatico">
+    <option value="0">Manuale</option>
+    <option value="1">Ogni 1 min</option>
+    <option value="5">Ogni 5 min</option>
+    <option value="10">Ogni 10 min</option>
+  </select>
+  <select id="sort" aria-label="Ordina per">
+    <option value="net">Profitto netto</option>
+    <option value="disc">Sconto sul prezzo medio</option>
+    <option value="roi">Ritorno %</option>
+  </select>
+</div>
+
+<details id="set">
+  <summary>Impostazioni</summary>
+  <div class="grid">
+    <label class="wide">Indirizzo sorgente dati (JSON)
+      <input id="url" type="text" placeholder="prezzi.json" autocomplete="off"></label>
+    <label>Prezzo minimo<input id="xmin" type="number" min="0" step="1000"></label>
+    <label>Prezzo massimo<input id="xmax" type="number" min="0" step="1000"></label>
+    <label>Sotto il BIN di riferimento, min %<input id="dref" type="number" min="0" max="100" step="1"></label>
+    <label>Sotto il prezzo medio, min %<input id="davg" type="number" min="0" max="100" step="1"></label>
+    <label>Profitto netto minimo<input id="pmin" type="number" min="0" step="500"></label>
+  </div>
+</details>
+
+<p class="stat" id="count"></p>
+<div id="list"></div>
+
+<script>
+// Formato atteso dalla sorgente: [{"name":"Nome","rating":90,"price":182000,"ref":215000,"avg":238000,"url":"https://..."}]
+// "price" = BIN attuale, "ref" = BIN di riferimento (prezzo normale di poco fa), "avg" = prezzo medio. "volume" e "url" facoltativi.
+var TAX = 0.95; // EA trattiene il 5% sulla vendita
+var DEF = {url:'', xmin:50000, xmax:1000000, dref:10, davg:15, pmin:2000, auto:5, sort:'net'};
+var DEMO = [
+  {name:'Giocatore A', rating:91, price:182000, ref:215000, avg:238000, volume:64},
+  {name:'Giocatore B', rating:88, price:96000, ref:104000, avg:125000, volume:120},
+  {name:'Giocatore C', rating:90, price:410000, ref:470000, avg:520000, volume:35},
+  {name:'Giocatore D', rating:89, price:75000, ref:90000, avg:86000, volume:80},
+  {name:'Giocatore E', rating:93, price:640000, ref:760000, avg:905000, volume:12},
+  {name:'Giocatore F', rating:86, price:30000, ref:40000, avg:48000, volume:300},
+  {name:'Giocatore G', rating:92, price:880000, ref:990000, avg:1080000, volume:3}
+];
+var cfg = Object.assign({}, DEF), timer = null, $ = function(s){return document.querySelector(s)};
+
+try { Object.assign(cfg, JSON.parse(localStorage.getItem('fs2') || '{}')); } catch (e) {}
+function save(){ try { localStorage.setItem('fs2', JSON.stringify(cfg)); } catch (e) {} }
+
+function fmt(n){ return Math.round(n).toLocaleString('it-IT'); }
+
+function readUI(){
+  cfg.url = $('#url').value.trim();
+  cfg.xmin = +$('#xmin').value || 0;
+  cfg.xmax = +$('#xmax').value || 1e9;
+  cfg.dref = +$('#dref').value || 0;
+  cfg.davg = +$('#davg').value || 0;
+  cfg.pmin = +$('#pmin').value || 0;
+  cfg.sort = $('#sort').value;
+  cfg.auto = +$('#auto').value;
+  save();
+}
+function writeUI(){
+  $('#url').value = cfg.url; $('#xmin').value = cfg.xmin; $('#xmax').value = cfg.xmax;
+  $('#dref').value = cfg.dref; $('#davg').value = cfg.davg; $('#pmin').value = cfg.pmin; $('#sort').value = cfg.sort; $('#auto').value = cfg.auto;
+}
+
+async function getData(){
+  if (!cfg.url) {
+    $('#demo').hidden = false;
+    return DEMO.map(function(p){ var j = 1 + (Math.random() - .5) * .06; return Object.assign({}, p, {price: Math.round(p.price * j)}); });
+  }
+  $('#demo').hidden = true;
+  var r = await fetch(cfg.url, {cache:'no-store'});
+  if (!r.ok) throw new Error('La sorgente ha risposto con errore ' + r.status);
+  var d = await r.json();
+  if (!Array.isArray(d)) throw new Error('Il JSON deve essere una lista di giocatori');
+  return d;
+}
+
+function analyse(list){
+  return list.map(function(p){
+    var price = +p.price, avg = +(p.avg || p.avgPrice || p.average), ref = +(p.ref || p.bin || avg);
+    if (!(price > 0) || !(avg > 0) || !(ref > 0)) return null;
+    var net = avg * TAX - price;
+    return {name:String(p.name || 'Senza nome'), rating:p.rating, price:price, ref:ref, avg:avg, vol:p.volume, url:p.url,
+            dref:(ref - price) / ref * 100, disc:(avg - price) / avg * 100, net:net, roi:net / price * 100};
+  }).filter(Boolean);
+}
+
+function render(items){
+  var rows = items.filter(function(p){
+    return p.price >= cfg.xmin && p.price <= cfg.xmax && p.dref >= cfg.dref && p.disc >= cfg.davg && p.net >= cfg.pmin;
+  });
+  var key = {net:'net', disc:'disc', roi:'roi'}[cfg.sort] || 'net';
+  rows.sort(function(a, b){ return b[key] - a[key]; });
+  $('#count').textContent = rows.length + ' occasioni su ' + items.length + ' giocatori controllati';
+  var box = $('#list'); box.textContent = '';
+  if (!rows.length) {
+    var e = document.createElement('div'); e.className = 'empty';
+    e.textContent = 'Nessun prezzo basso in questo momento. Prova ad abbassare lo sconto o il profitto minimo.';
+    box.appendChild(e); return;
+  }
+  rows.forEach(function(p){
+    var d = document.createElement('div'); d.className = 'row';
+    var title = p.url ? '<a></a>' : '<span></span>';
+    d.innerHTML = '<div class="top"><div class="nm">' + title + '<small></small></div><div class="pf num"></div></div>' +
+      '<div class="track"><div class="fill"></div></div><div class="meta num"></div>';
+    var n = d.querySelector('.nm ' + (p.url ? 'a' : 'span'));
+    n.textContent = p.name; if (p.url) { n.href = p.url; n.target = '_blank'; n.rel = 'noopener'; }
+    d.querySelector('small').textContent = p.rating ? p.rating : '';
+    d.querySelector('.pf').textContent = '+' + fmt(p.net);
+    d.querySelector('.fill').style.width = Math.max(4, Math.min(100, p.price / p.avg * 100)) + '%';
+    var low = p.vol != null && p.vol < 10;
+    d.querySelector('.meta').innerHTML = '<span>Prezzo <b>' + fmt(p.price) + '</b></span><span>BIN rif. <b>' + fmt(p.ref) + '</b> (−' + p.dref.toFixed(1) + '%)</span><span>Medio <b>' + fmt(p.avg) +
+      '</b> (−' + p.disc.toFixed(1) + '%)</span><span>Ritorno <b>' + p.roi.toFixed(1) + '%</b></span>' +
+      (p.vol != null ? '<span' + (low ? ' class="flag"' : '') + '>Vendite/giorno <b>' + fmt(p.vol) + '</b>' + (low ? ' (poco liquido)' : '') + '</span>' : '');
+    box.appendChild(d);
+  });
+}
+
+async function refresh(){
+  readUI();
+  $('#go').disabled = true; $('#status').className = 'sub'; $('#status').textContent = 'Aggiornamento…';
+  try {
+    render(analyse(await getData()));
+    $('#status').textContent = 'Aggiornato alle ' + new Date().toLocaleTimeString('it-IT', {hour:'2-digit', minute:'2-digit'}) +
+      ' · profitto netto = prezzo medio × 0,95 − prezzo attuale';
+  } catch (e) {
+    $('#status').className = 'sub err';
+    $('#status').textContent = 'Errore: ' + e.message + '. Controlla l’indirizzo e che la sorgente consenta l’accesso dal tuo sito (CORS).';
+  }
+  $('#go').disabled = false;
+  clearInterval(timer);
+  if (cfg.auto) timer = setInterval(refresh, cfg.auto * 60000);
+}
+
+$('#go').onclick = refresh;
+['#auto', '#sort'].forEach(function(s){ $(s).onchange = refresh; });
+['#url', '#xmin', '#xmax', '#dref', '#davg', '#pmin'].forEach(function(s){ $(s).onchange = refresh; });
+writeUI(); refresh();
+</script>
+</body>
+</html>
